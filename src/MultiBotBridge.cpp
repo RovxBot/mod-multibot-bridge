@@ -58,6 +58,16 @@
 #include <utility>
 #include <vector>
 
+// mod-playerbots #2854 (test-staging, not yet master) renamed these members; build against either name.
+// Remove once #2854 is on mod-playerbots master: use the new names and the "Playerbots." prefix directly.
+#define PLAYERBOT_CONFIG(newName, oldName)          \
+    ([](auto& config) -> auto& {                    \
+        if constexpr (requires { config.newName; }) \
+            return config.newName;                  \
+        else                                        \
+            return config.oldName;                  \
+    }(sPlayerbotAIConfig))
+
 namespace
 {
 char const* const kAddonPrefix = "MBOT";
@@ -65,6 +75,13 @@ char const* const kAddonEnvelope = "MBOT\t";
 char const* const kBridgeName = "mod-multibot-bridge";
 char const* const kProtocolVersion = "1";
 char const kFieldSeparator = '~';
+
+template <typename Config>
+concept PlayerbotConfigRenamed = requires { Config::Instance(); };
+
+// Same rename for the config keys: AiPlayerbot.* became Playerbots.*.
+char const* const kPlayerbotConfigPrefix =
+    PlayerbotConfigRenamed<PlayerbotAIConfig> ? "Playerbots." : "AiPlayerbot.";
 
 std::size_t constexpr kMaxBridgeWireLength = 255;
 std::size_t constexpr kMaxBridgePayloadLength = kMaxBridgeWireLength - 5;
@@ -1341,7 +1358,8 @@ std::string GetPremadeSpecLink(uint8 classId, uint32 specIndex, uint32 botLevel)
         seen.insert(level);
 
         std::ostringstream key;
-        key << "AiPlayerbot.PremadeSpecLink." << static_cast<uint32>(classId) << '.' << specIndex << '.' << level;
+        key << kPlayerbotConfigPrefix << "PremadeSpecLink." << static_cast<uint32>(classId) << '.' << specIndex
+            << '.' << level;
 
         std::string const link = GetPremadeSpecConfigString(key.str());
         if (!link.empty())
@@ -1451,7 +1469,7 @@ bool BuildLevelAdjustedTalentSpecTabs(
 
     int startLevel = static_cast<int>(bot->GetLevel());
     while (startLevel > 1 && startLevel < 80 &&
-           sPlayerbotAIConfig.parsedSpecLinkOrder[classId][specIndex][startLevel].empty())
+           PLAYERBOT_CONFIG(ParsedSpecLinkOrder, parsedSpecLinkOrder)[classId][specIndex][startLevel].empty())
     {
         --startLevel;
     }
@@ -1460,7 +1478,7 @@ bool BuildLevelAdjustedTalentSpecTabs(
     for (int level = startLevel; level <= 80 && freePoints; ++level)
     {
         std::vector<std::vector<uint32>> const& order =
-            sPlayerbotAIConfig.parsedSpecLinkOrder[classId][specIndex][level];
+            PLAYERBOT_CONFIG(ParsedSpecLinkOrder, parsedSpecLinkOrder)[classId][specIndex][level];
         if (order.empty())
             continue;
 
@@ -1545,7 +1563,7 @@ std::vector<TalentSpecEntryData> BuildTalentSpecEntries(Player* bot)
     for (uint32 specIndex = 0; specIndex <= 30; ++specIndex)
     {
         std::ostringstream nameKey;
-        nameKey << "AiPlayerbot.PremadeSpecName." << static_cast<uint32>(classId) << '.' << specIndex;
+        nameKey << kPlayerbotConfigPrefix << "PremadeSpecName." << static_cast<uint32>(classId) << '.' << specIndex;
 
         std::string const specName = GetPremadeSpecConfigString(nameKey.str());
         if (specName.empty())
@@ -10317,15 +10335,16 @@ void RunSelfActionCommand(
         {
             if (!argument.empty())
                 reason = "BAD_ARGUMENT";
-            else if (!sPlayerbotAIConfig.autoGearCommand)
+            else if (!PLAYERBOT_CONFIG(AutoGearCommand, autoGearCommand))
                 reason = "DISABLED";
-            else if (!sPlayerbotAIConfig.autoGearCommandAltBots &&
+            else if (!PLAYERBOT_CONFIG(AutoGearCommandAltBots, autoGearCommandAltBots) &&
                      !sPlayerbotAIConfig.IsInRandomAccountList(requester->GetSession()->GetAccountId()))
                 reason = "ALT_BOT_REFUSED";
             else
             {
-                uint32 const quality = static_cast<uint32>(sPlayerbotAIConfig.autoGearQualityLimit);
-                uint32 const ilvl = static_cast<uint32>(sPlayerbotAIConfig.autoGearScoreLimit);
+                uint32 const quality =
+                    static_cast<uint32>(PLAYERBOT_CONFIG(AutoGearQualityLimit, autoGearQualityLimit));
+                uint32 const ilvl = static_cast<uint32>(PLAYERBOT_CONFIG(AutoGearScoreLimit, autoGearScoreLimit));
                 PlayerbotFactory::AutoGear(requester, quality, ilvl, true);
                 ok = true;
                 reason = "APPLIED";
@@ -10335,7 +10354,7 @@ void RunSelfActionCommand(
         {
             if (!argument.empty())
                 reason = "BAD_ARGUMENT";
-            else if (!sPlayerbotAIConfig.maintenanceCommand)
+            else if (!PLAYERBOT_CONFIG(MaintenanceCommand, maintenanceCommand))
                 reason = "DISABLED";
             else
             {
@@ -10361,49 +10380,49 @@ void RunSelfActionCommand(
                     factory.InitMounts();
                     factory.InitGlyphs(false);
                     factory.InitKeyring();
-                    if (requester->GetLevel() >= sPlayerbotAIConfig.minEnchantingBotLevel)
+                    if (requester->GetLevel() >= PLAYERBOT_CONFIG(MinEnchantingBotLevel, minEnchantingBotLevel))
                         factory.ApplyEnchantAndGemsNew();
                 }
                 else
                 {
-                    if (sPlayerbotAIConfig.altMaintenanceAttunementQs)
+                    if (PLAYERBOT_CONFIG(AltMaintenanceAttunementQs, altMaintenanceAttunementQs))
                         factory.InitAttunementQuests();
-                    if (sPlayerbotAIConfig.altMaintenanceBags)
+                    if (PLAYERBOT_CONFIG(AltMaintenanceBags, altMaintenanceBags))
                         factory.InitBags(false);
-                    if (sPlayerbotAIConfig.altMaintenanceAmmo)
+                    if (PLAYERBOT_CONFIG(AltMaintenanceAmmo, altMaintenanceAmmo))
                         factory.InitAmmo();
-                    if (sPlayerbotAIConfig.altMaintenanceFood)
+                    if (PLAYERBOT_CONFIG(AltMaintenanceFood, altMaintenanceFood))
                         factory.InitFood();
-                    if (sPlayerbotAIConfig.altMaintenanceReagents)
+                    if (PLAYERBOT_CONFIG(AltMaintenanceReagents, altMaintenanceReagents))
                         factory.InitReagents();
-                    if (sPlayerbotAIConfig.altMaintenanceConsumables)
+                    if (PLAYERBOT_CONFIG(AltMaintenanceConsumables, altMaintenanceConsumables))
                         factory.InitConsumables();
-                    if (sPlayerbotAIConfig.altMaintenancePotions)
+                    if (PLAYERBOT_CONFIG(AltMaintenancePotions, altMaintenancePotions))
                         factory.InitPotions();
-                    if (sPlayerbotAIConfig.altMaintenanceTalentTree)
+                    if (PLAYERBOT_CONFIG(AltMaintenanceTalentTree, altMaintenanceTalentTree))
                         factory.InitTalentsTree(true);
-                    if (sPlayerbotAIConfig.altMaintenancePet)
+                    if (PLAYERBOT_CONFIG(AltMaintenancePet, altMaintenancePet))
                         factory.InitPet();
-                    if (sPlayerbotAIConfig.altMaintenancePetTalents)
+                    if (PLAYERBOT_CONFIG(AltMaintenancePetTalents, altMaintenancePetTalents))
                         factory.InitPetTalents();
-                    if (sPlayerbotAIConfig.altMaintenanceSkills)
+                    if (PLAYERBOT_CONFIG(AltMaintenanceSkills, altMaintenanceSkills))
                         factory.InitSkills();
-                    if (sPlayerbotAIConfig.altMaintenanceClassSpells)
+                    if (PLAYERBOT_CONFIG(AltMaintenanceClassSpells, altMaintenanceClassSpells))
                         factory.InitClassSpells();
-                    if (sPlayerbotAIConfig.altMaintenanceAvailableSpells)
+                    if (PLAYERBOT_CONFIG(AltMaintenanceAvailableSpells, altMaintenanceAvailableSpells))
                         factory.InitAvailableSpells();
-                    if (sPlayerbotAIConfig.altMaintenanceReputation)
+                    if (PLAYERBOT_CONFIG(AltMaintenanceReputation, altMaintenanceReputation))
                         factory.InitReputation();
-                    if (sPlayerbotAIConfig.altMaintenanceSpecialSpells)
+                    if (PLAYERBOT_CONFIG(AltMaintenanceSpecialSpells, altMaintenanceSpecialSpells))
                         factory.InitSpecialSpells();
-                    if (sPlayerbotAIConfig.altMaintenanceMounts)
+                    if (PLAYERBOT_CONFIG(AltMaintenanceMounts, altMaintenanceMounts))
                         factory.InitMounts();
-                    if (sPlayerbotAIConfig.altMaintenanceGlyphs)
+                    if (PLAYERBOT_CONFIG(AltMaintenanceGlyphs, altMaintenanceGlyphs))
                         factory.InitGlyphs(false);
-                    if (sPlayerbotAIConfig.altMaintenanceKeyring)
+                    if (PLAYERBOT_CONFIG(AltMaintenanceKeyring, altMaintenanceKeyring))
                         factory.InitKeyring();
-                    if (sPlayerbotAIConfig.altMaintenanceGemsEnchants &&
-                        requester->GetLevel() >= sPlayerbotAIConfig.minEnchantingBotLevel)
+                    if (PLAYERBOT_CONFIG(AltMaintenanceGemsEnchants, altMaintenanceGemsEnchants) &&
+                        requester->GetLevel() >= PLAYERBOT_CONFIG(MinEnchantingBotLevel, minEnchantingBotLevel))
                         factory.ApplyEnchantAndGemsNew();
                 }
 
@@ -11522,14 +11541,14 @@ bool IsBotLifecycleControlRelationAllowed(
 
     uint32 const masterAccountId = requester->GetSession()->GetAccountId();
     bool const sameAccount =
-        sPlayerbotAIConfig.allowAccountBots
+        PLAYERBOT_CONFIG(AllowAccountBots, allowAccountBots)
         && target.AccountId == masterAccountId;
 
     Guild* const guild = requester->GetGuildId()
         ? sGuildMgr->GetGuildById(requester->GetGuildId())
         : nullptr;
     bool const sameGuild =
-        sPlayerbotAIConfig.allowGuildBots
+        PLAYERBOT_CONFIG(AllowGuildBots, allowGuildBots)
         && guild
         && guild->GetMember(targetGuid);
 
@@ -11537,7 +11556,7 @@ bool IsBotLifecycleControlRelationAllowed(
         sRandomPlayerbotMgr.IsAddclassBot(targetGuid.GetCounter());
 
     bool const linkedAccount =
-        sPlayerbotAIConfig.allowTrustedAccountBots
+        PLAYERBOT_CONFIG(AllowTrustedAccountBots, allowTrustedAccountBots)
         && mgr->IsAccountLinked(target.AccountId, masterAccountId);
 
     // MB_BOT_LIFECYCLE_GROUP_AUTHORIZATION_B1_V1_BEGIN
@@ -11796,7 +11815,7 @@ void RunBotLifecycleConnect(
     std::size_t const pendingCount =
         CountBotLifecyclePendingConnects(requester);
     uint32 const maxBots =
-        uint32(PlayerbotAIConfig::instance().maxAddedBots);
+        uint32(PLAYERBOT_CONFIG(MaxAddedBots, maxAddedBots));
     if (mgr->GetPlayerbotsCount() + pendingCount >= maxBots)
     {
         SendBotLifecycleResultPacket(
@@ -12485,10 +12504,10 @@ void RunSelfBotCommand(
         }
         else if (desiredActive && GET_PLAYERBOT_AI(requester) && !currentActive)
             reason = "AI_STATE_CONFLICT";
-        else if (desiredActive && sPlayerbotAIConfig.selfBotLevel == 0)
+        else if (desiredActive && PLAYERBOT_CONFIG(SelfBotLevel, selfBotLevel) == 0)
             reason = "DISABLED";
         else if (desiredActive
-                 && sPlayerbotAIConfig.selfBotLevel == 1
+                 && PLAYERBOT_CONFIG(SelfBotLevel, selfBotLevel) == 1
                  && !requester->CanBeGameMaster())
             reason = "FORBIDDEN";
         else
